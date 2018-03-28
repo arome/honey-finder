@@ -1,4 +1,4 @@
-import os, datetime, timeit, shutil, time 
+import os, datetime, timeit, shutil, time, sys
 clear = lambda: os.system('cls')
 
 #times = '8:50'
@@ -23,12 +23,12 @@ def printWelcome():
 def printCurrentState(name, sdate, edate, numFiles, currentPosition, errorsFound, time):
     clear()
     if time:
-        print("Scanned " + str(numFiles) + " entries in " + "{:10.2f}".format(time) + " second" + ("s." if time > 1 else "."))
+        print("Scanned " + str(numFiles) + (" entries" if numFiles > 1 else " entry")+" in " + "{:10.2f}".format(time) + " second" + ("s." if time > 1 else "."))
     else:
-        print("Scanning " + str(numFiles) + " entries in the errors log...")
+        print("Scanning " + str(numFiles) + (" entries" if numFiles > 1 else " entry")+" in the directory " + dirpath + ")"
     print(statusBar(currentPosition, 0 if time else 1))
     if not errorsFound:
-        print("No entries found for " + name + (" between " + sdate + " and " + edate if sdate is not None else ""))  
+        print("No entry found for " + name + (" between " + sdate + " and " + edate if sdate is not None else ""))  
     else:
         print(str(len(errorsFound)) + " error" + ("s" if len(errorsFound) > 1 else "") + " found for " + name + (" between " + sdate + " and " + edate if sdate is not None else "")) 
         print(errorsFound)
@@ -48,9 +48,11 @@ def statusBar(num, showPercentage):
     return bar
 
 def searchFileContent(dirpath, filename, name):
-    with open(dirpath + filename,'r') as f:
-        if name in f.readline():
-            return filename
+    is_accessible = os.access(dirpath + filename,os.F_OK) #Check if you have access, this should be a path
+    if is_accessible == True: #If you don't, create the path
+        with open(dirpath + filename,'r') as f:
+            if name in f.readline():
+                return filename
 
 def main():
     printWelcome()
@@ -60,6 +62,8 @@ def main():
     limitToXML = 0
     if customDir:
         dirpath = input("Please enter the path to your directory : ")
+        if dirpath[-1] != "\\":
+            dirpath += "\\"
         limitToXML = 1 if input("Only search XML files? (y/n) : ").lower() == "y" else 0
         question = "Text you're searching for? : "
     sbyDate = 1 if input("Search by date? (y/n) : ").lower() == "y" else 0
@@ -67,7 +71,6 @@ def main():
     if sbyDate:
         sdate = datetime.datetime.strptime(input("Enter Date in (yyyy-mm-dd) format: "), "%Y-%m-%d")
         edate = sdate + datetime.timedelta(days=1) 
-        print(sdate.timetuple())
         after_date = time.mktime(sdate.timetuple())
         before_date = time.mktime(edate.timetuple())
     name = input(question)
@@ -76,25 +79,39 @@ def main():
 
     currentPercentage, count = 0, 0
     errorsFound = []
-    numFiles = len(os.listdir(dirpath))
-    for filename in os.listdir(dirpath):
-        if not limitToXML or filename.endswith("xml"):
-            if sbyDate:
-                if os.path.getmtime(dirpath+filename) > after_date and os.path.getmtime(dirpath+filename) < before_date:
-                    copyfile(dirpath+filename, "./temp/"+filename)
-                    # filename = searchFileContent(dirpath, filename, name)
-            else:
-                filename = searchFileContent(dirpath, filename, name)
-            if filename is not None:
-                errorsFound.append(filename)
-        if currentPercentage < int(count*100/numFiles):
-            printCurrentState(name, sdate, edate, numFiles, int(count*100/numFiles), errorsFound, 0)
-            currentPercentage = count*100/numFiles
-        count+=1
+    try:
+        numFiles = len(os.listdir(dirpath))
+        fileFound = []
+        for filename in os.listdir(dirpath):
+            if "." in filename and (not limitToXML or filename.endswith("xml")):
+                if sbyDate:
+                    if os.path.getmtime(dirpath+filename) > after_date and os.path.getmtime(dirpath+filename) < before_date:
+                        filename = searchFileContent(dirpath, filename, name)
+                else:
+                    filename = searchFileContent(dirpath, filename, name)
+                if filename is not None:
+                    errorsFound.append(filename)
+            if currentPercentage < int(count*100/numFiles):
+                printCurrentState(dirpath, name, sdate, edate, numFiles, int(count*100/numFiles), errorsFound, 0)
+                currentPercentage = count*100/numFiles
+            count+=1
 
-    end_time = timeit.default_timer()
-    time = end_time - start_time
-    printCurrentState(name, sdate, edate, numFiles, int(count*100/numFiles)+4, errorsFound, time)
+        end_time = timeit.default_timer()
+        runTime = end_time - start_time
+        printCurrentState(dirpath, name, sdate, edate, numFiles, int(count*100/numFiles)+4, errorsFound, runTime)
+    except FileNotFoundError as err:
+        if "network" in str(err):
+            print("Make sure you are connected to the company's VPN.")
+        else:
+            print("This directory is not found")
+    except PermissionError as perm:
+        print("Missing permission to access:", perm)
+        raise
+    except:
+        print("Unexpected error:", sys.exc_info()[0])
+        raise
+    finally:
+        print("The execution will now be terminated")
 
 if __name__ == "__main__":
     main()
